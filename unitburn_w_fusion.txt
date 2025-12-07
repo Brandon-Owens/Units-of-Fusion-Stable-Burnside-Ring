@@ -1,0 +1,296 @@
+#############################################################################
+##
+##  unitburn_w_fusion.txt                                  
+##
+## 
+##  This file contains a GAP4 implementation of the algorithm for the
+##  computation of the unit group of the Burnside ring of a finite group,
+##  as well as for the computation of the unit group of the Burnside ring of  
+##  the fusion category of a finite group over a Sylow 2-subgroup.
+##
+##  The two main functions in this file are 'UnitsBurnsideRing(grp)' and
+##  'UnitsBurnsideRingFusion(grp)'.  Both take a finite group 'grp' as argument.  
+##  This group should have an easly accessible list of conjugcay classes of
+##  subgroups.
+##
+##  'UnitsBurnsideRing(grp)' returns a basis of the unit group of the
+##  Burnside ring of 'grp' as lists of subsets of '[1..n]', where 'n' is the
+##  number of conjugacy classes of subgroups of 'grp'.
+##
+##    gap> UnitsBurnsideRing(DihedralGroup(6));
+##    ....
+##    [ [ 1, 3 ], [ 2 ], [ 4 ] ]
+##
+##
+##  'UnitsBurnsideRingFusion(grp)' returns a basis of the unit group ghost ring 
+##  of the Burnside ring of the fusion category of 'grp' over a Sylow 2-subgroup 
+##  as a list of subsets of '[1..n]', where 'n' is the number of conjugacy classes of 
+##  subgroups of 'grp'.
+##
+##    gap> UnitsBurnsideRingFusion(AlternatingGroup(4));
+##    ....
+##    [ [ 1, 2, 3, 4 ], [ 5 ] ]
+## 
+## 
+##    In the ghost ring, the two lists above correspond to the elements (-1,-1,-1,-1, 1) 
+##    and (1, 1, 1, 1, -1), respectively (or equivalently, to the elements (1, 1, 1, 1, 0) and 
+##    (0,0,0,0,1) since the map from Z/2Z to {1,-1} sends 0 to 1 and sends 1 to -1).
+##
+##
+##  Reference: R. Boltje and G. Pfeiffer, An algorithm for the unit group of
+##  the Burnside ring of a finite group.  In: Groups St Andrews 2005, LMS
+##  Lecture Note Series 339, Cambridge University Press, 2006.
+##
+##
+
+
+#############################################################################
+##
+#F  UnitGroupRelations( <classes>, <i> )
+##
+##  given the list <classes> of conjugacy classes of subgroups of a group and
+##  an index i, produce a list
+##  of  relations on the unit group of the ghost ring.
+##
+UnitGroupRelations:= function(ggc, p)
+    local   ggg,  grp,  sub,  nor,  hom,  quo,  res,  g,  ho2,  qu2,  
+            bas,  n,  rep,  list,  i,  r,  pos,  eqn,  j;
+    
+    # the big group and the subgroup in question.
+    ggg:= List(ggc, Representative);
+    grp:= StructuralCopy(ggg[Length(ggg)]);  
+    sub:= StructuralCopy(ggg[p]);
+    
+    # construct the normalizer quotient.
+    nor:= Normalizer(grp, sub);
+    hom:= NaturalHomomorphismByNormalSubgroup(nor, sub);
+    quo:= Image(hom);
+    
+    # now we look at the largest 2-elementary abelian quotient of nor/sub.
+    res:= DerivedSubgroup(nor);
+    res:= ClosureGroup(res, GeneratorsOfGroup(sub));
+    res:= ClosureGroup(res, List(GeneratorsOfGroup(nor), g-> g^2));
+    
+    # then this quotient is 2-elementary abelian.
+    ho2:= NaturalHomomorphismByNormalSubgroup(nor, res);
+    qu2:= Image(ho2);
+    
+    # find a basis.
+    bas:= Pcgs(qu2);  n:= Length(bas);
+    
+    # now we find the cyclic subgroups of the quotient:    
+    
+    # determine fusion of quotient elements to sums of basis elements.
+    list:= [];
+    rep:= List(ConjugacyClasses(quo), Representative);
+    for i in [1..Length(rep)] do
+        r:= rep[i];
+        
+        # find corresponding subgroups.
+        g:= PreImage(hom, Subgroup(quo, [r]));
+        pos:= PositionProperty(ggc, c-> g in c);
+        
+        # construct an equation for each of them.
+        eqn:= ExponentsOfPcElement(bas, Representative(PreImages(hom, r))^ho2);
+        Append(eqn, 0*[1..Length(ggg)]);
+        j:= n +  p ;  eqn[j]:= eqn[j] + 1;
+        j:= n + pos;  eqn[j]:= eqn[j] + 1;
+        Add(list, eqn*Z(2));
+    od;
+    
+    # now triangulize.
+    TriangulizeMat(list);
+    
+    # cut out the essential bit (ignore n x n identity in upper left corner!)
+    list:= list{[n+1..Length(list)]}{n+[1..Length(ggg)]};
+    
+    # ignore 0-lines
+    list:= Filtered(list, x-> x <> 0*x);
+    
+    # return the result.
+    return list;
+    
+end;
+
+#############################################################################
+##
+#F  UnitsBurnsideRing( <grp> ) . . . . . . . . . . . . . . . . .  unit group.
+##
+##  Given a group <grp>, produce a basis for the unit group of the
+##  burnside ring.
+##
+UnitsBurnsideRing:= function(grp)
+    local   ggc, list,  i,  sol;
+    
+    list:= [];
+    ggc:= ConjugacyClassesSubgroups(grp);
+    
+    # collect Yoshida conditions from all classes of subgroups
+    for i in [1..Length(ggc)] do
+        Append(list, UnitGroupRelations(ggc, i));
+        Print(".\c");
+    od;
+    Print("\n");
+    
+    # solve.
+    sol:= NullspaceMat(TransposedMatDestructive(list));
+    
+    # translate into lists of classes.
+    list:= [];
+    for i in [1..Length(sol)] do
+        list[i]:= Filtered([1..Length(ggc)], x-> sol[i][x] <> 0*sol[i][x]);
+    od;
+    
+    return list;
+end;
+
+
+
+##############################################################################################################
+##
+#F  UnitGroupRelationsFusion( <grp> ,<classes>, <i> )
+##
+##  given the big group <grp>, the list <classes> of conjugacy classes of subgroups of a sylow 2-subgroup and
+##  an index i, produce a list
+##  of  relations on the unit group of the ghost ring.
+##
+UnitGroupRelationsFusion:= function(grp, ggc, p)
+    local   ggg, sgrp,  sub,  nor,  hom,  quo,  res,  g,  ho2,  qu2,  
+            bas,  n,  rep,  list,  i,  r,  pos,  eqn,  j,
+		fcc, c, a, fsg, feqn, pos1, pos2, ssg, k, orb, ocg, m, neworb;
+    
+    # find a set of reps for the conjugacy classes of subgroups of the Sylow 2-subgroup
+    ggg:= List(ggc, Representative);
+
+    # the Sylow 2-subgroup and the subgroup in question.
+    sgrp:= StructuralCopy(ggg[Length(ggg)]);  
+    sub:= StructuralCopy(ggg[p]);
+    
+    # construct the normalizer quotient.
+    nor:= Normalizer(sgrp, sub);
+    hom:= NaturalHomomorphismByNormalSubgroup(nor, sub);
+    quo:= Image(hom);
+    
+    # now we look at the largest 2-elementary abelian quotient of nor/sub.
+    res:= DerivedSubgroup(nor);
+    res:= ClosureGroup(res, GeneratorsOfGroup(sub));
+    res:= ClosureGroup(res, List(GeneratorsOfGroup(nor), g-> g^2));
+    
+    # then this quotient is 2-elementary abelian.
+    ho2:= NaturalHomomorphismByNormalSubgroup(nor, res);
+    qu2:= Image(ho2);
+    
+    # find a basis.
+    bas:= Pcgs(qu2);  n:= Length(bas);
+
+    
+    # now we find the cyclic subgroups of the quotient:    
+    
+    # determine fusion of quotient elements to sums of basis elements.
+    list:= [];
+    rep:= List(ConjugacyClasses(quo), Representative);
+    for i in [1..Length(rep)] do
+        r:= rep[i];
+        
+        # find corresponding subgroups.
+        g:= PreImage(hom, Subgroup(quo, [r]));
+        pos:= PositionProperty(ggc, c-> g in c);
+        
+        # construct an equation for each of them.
+        eqn:= ExponentsOfPcElement(bas, Representative(PreImages(hom, r))^ho2);
+        Append(eqn, 0*[1..Length(ggg)]);
+        j:= n +  p ;  eqn[j]:= eqn[j] + 1;
+        j:= n + pos;  eqn[j]:= eqn[j] + 1;
+        Add(list, eqn*Z(2));
+    od;
+    
+    # now we the find fusion conjugacy classes:
+    fcc:=[];
+
+    # compute orbits of grp-conjugation on reps of ggc (Note: ggg is not invariant under grp-action (my guess is that it is a proper subset of a domain), 
+    # so the function Orbits silently replaces replaces ggg with the smallest super set of ggg which is invariant. (Perhaps need a better method of finding fusion class))
+    ocg:= Orbits(grp, ggg);
+
+    # then filter out groups from each orbit which do not lie in set of conjugacy class representatives of subgroups.
+    for orb in ocg do
+        neworb:=Filtered(orb, x -> x in ggg);
+        Add(fcc, neworb);
+    od;
+
+    # the end result is the list fcc consisting of fusion conjugacy classes.
+
+         
+    # now construct equations for each fusion class of size greater than 1.
+    for c in Filtered(fcc, d -> Size(d)>1) do
+
+        # fix first subgroup in a given fusion class.
+        fsg:=c[1];
+
+        # find corresponding subgroup in ggc.
+        pos1:=PositionProperty(ggc, c -> fsg in c);
+
+        # filter through rest of fusion class, creating pairs and a corresponding equation for each pair.
+	  for a in [2..Length(c)] do
+            ssg:=c[a];
+
+            # find corresponding subgroup in ggc. 
+            pos2:=PositionProperty(ggc, c -> ssg in c);
+
+            # construct equation linking the pair.
+            feqn:= 0*[1..(n+Length(ggg))];
+            k:= n + pos1; feqn[k]:= feqn[k]+1;
+            k:= n + pos2; feqn[k]:= feqn[k]+1;
+            Add(list, feqn*Z(2));
+         od;
+    od;
+            
+
+    # now triangulize.
+    TriangulizeMat(list);
+    
+    # cut out the essential bit (ignore n x n identity in upper left corner!)
+    list:= list{[n+1..Length(list)]}{n+[1..Length(ggg)]};
+    
+    # ignore 0-lines
+    list:= Filtered(list, x-> x <> 0*x);
+    
+    # return the result.
+    return list;
+    
+end;
+
+###################################################################################
+##
+#F  UnitsBurnsideRingFusion( <grp> ) . . . . . . . . . . . . . . . . .  unit group.
+##
+##  Given a group <grp>, produce a basis for the unit group of the
+##  Burnside ring of the fusion category of <grp> over a Sylow 2-subgroup.
+##
+UnitsBurnsideRingFusion:= function(grp)
+    local   ggc, list,  i,  sol, syl;
+    
+    syl:= SylowSubgroup(grp, 2);
+    list:= [];
+    ggc:= ConjugacyClassesSubgroups(syl);
+    
+    # collect Yoshida conditions from all classes of subgroups
+    for i in [1..Length(ggc)] do
+        Append(list, UnitGroupRelationsFusion(grp, ggc, i));
+        Print(".\c");
+    od;
+    Print("\n");
+    
+    # solve.
+    sol:= NullspaceMat(TransposedMatDestructive(list));
+    
+    # translate into lists of classes.
+    list:= [];
+    for i in [1..Length(sol)] do
+        list[i]:= Filtered([1..Length(ggc)], x-> sol[i][x] <> 0*sol[i][x]);
+    od;
+    
+    return list;
+end;
+
+
+
